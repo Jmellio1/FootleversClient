@@ -1,0 +1,162 @@
+﻿@*
+
+there are some limitations in this approach
+
+
+*@
+
+
+
+@page "/"
+@using System.Text.Json;
+@using System.Diagnostics;
+@inject IHttpClientFactory ClientFactory
+
+<PageTitle>Index</PageTitle>
+
+<button class="btn btn-primary" @onclick="callAPi">Click me</button>
+
+
+
+    <h1 style="color:white"> We sent over @randNum of api calls of which @failedResponse failed</h1>
+     <table style="color:white" class=" table table-striped">
+         <thead>
+             <tr>
+            <th>successful</th>
+            <th> response time in MS</th>
+            <th>message sent</th>
+            <th>message received</th>
+            <th>errors?</th>
+             </tr>
+         </thead>
+    <tbody style="color:white">
+        @foreach(var item in responeList)
+        {
+            <tr>
+                <td style="color:white">@item.successful </td>
+                <td style="color:white">@item.timeSpan </td>
+                <td style="color:white">@item.sentMessage </td>
+                <td style="color:white">@item.Response </td>
+                <td style="color:white">@item.error </td>
+              
+            </tr>
+        }
+    </tbody>
+     </table>
+      
+
+
+@code{
+    private int randNum;
+    private int failedResponse;
+    private List<responseClass>? responeList= new List<responseClass>();
+    public class apiResponse
+    {
+        public string response { get; set; } 
+        public string message { get; set; }
+    }
+    public class responseClass
+    {
+        public string sentMessage { get; set; }
+        public string Response { get; set; }
+        public double timeSpan { get; set; }
+        public bool successful { get; set; } = false;
+        public string? error { get; set; } = null;
+
+    }
+
+
+    private async Task callAPi()
+    {
+        responeList.Clear();
+        Random rand = new Random();
+        randNum = rand.Next(1, 100);
+        failedResponse = 0;
+        //using to make random string 
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+
+
+
+
+        for(int i = 0; i < randNum; i++)
+        {
+
+            //random string for api
+            var randomString = new string(Enumerable.Repeat(chars, 20).Select(s => s[rand.Next(s.Length)]).ToArray());
+
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://localhost:7067/api/ping?message=" + randomString);
+            Stopwatch stopWatch = new Stopwatch();
+            double ts =0;
+            try
+            {
+                var client = ClientFactory.CreateClient();
+                
+                client.Timeout = TimeSpan.FromSeconds(5);
+                stopWatch.Start();
+
+                // bug doing it this way is if the button is clicked again old request could still come in ....
+                var response = await client.SendAsync(request);
+                stopWatch.Stop();
+                 ts = stopWatch.Elapsed.TotalMilliseconds;
+                responseClass responseClass = new responseClass
+                    {
+                        timeSpan = ts,
+                        Response = null,
+                        sentMessage = randomString
+
+                    };
+
+
+                if (response.IsSuccessStatusCode)
+                {
+                    await using var responseStream = await response.Content.ReadAsStreamAsync();
+                    var responseDes = await JsonSerializer.DeserializeAsync<apiResponse>(responseStream);
+                    
+                    if (String.Equals(randomString, responseDes.message))
+                    {
+                        responseClass.Response = responseDes.message;
+                        responseClass.successful = true;
+                    }
+                    else
+                    {
+                        failedResponse++;
+                    }
+
+
+
+                }
+                else
+                {
+                    failedResponse++;
+                }
+                responeList.Add(responseClass);
+                //just using to update in real time
+                InvokeAsync(StateHasChanged);
+            }
+            catch (Exception e)
+            {
+                stopWatch.Stop();
+                ts = stopWatch.Elapsed.TotalMilliseconds;
+                responseClass responseClass = new responseClass
+                    {
+                        timeSpan = ts,
+                        Response = null,
+                        sentMessage = randomString,
+                        error = e.Message
+
+                    };
+                failedResponse++;
+                responeList.Add(responseClass);
+                //just using to update in real time 
+                InvokeAsync(StateHasChanged);
+
+            }
+        
+           
+        }
+    }
+
+    
+
+ }
